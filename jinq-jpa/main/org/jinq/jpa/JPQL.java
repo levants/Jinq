@@ -66,8 +66,24 @@ public class JPQL
       return str.matches(regex);
    }
    
-   public static boolean in(Object obj, Collection<?> collection) 
+   /**
+    * Checks if an item is in a Collection list. This method is normally 
+    * used with the list as a parameter to the query. 
+    * @param item object that will be checked to see if it is in list
+    * @param list Collection of different items
+    * @return true if the item is in the list
+    */
+   public static <U> boolean isInList(U item, Collection<U> list)
    {
-      return collection.contains(obj);
+      return list.contains(item);
+   }
+   
+   /**
+    * Alternate syntax for the method isInList()
+    * @see #isInList()
+    */
+   public static <U> boolean listContains(Collection<U> list, U item)
+   {
+      return isInList(item, list);
    }
 }

@@ -11,6 +11,7 @@ import org.jinq.jpa.jpqlquery.ConstantExpression;
 import org.jinq.jpa.jpqlquery.Expression;
 import org.jinq.jpa.jpqlquery.FunctionExpression;
 import org.jinq.jpa.jpqlquery.JPQLQuery;
+import org.jinq.jpa.jpqlquery.ParameterAsQuery;
 import org.jinq.jpa.jpqlquery.ReadFieldExpression;
 import org.jinq.jpa.jpqlquery.RowReader;
 import org.jinq.jpa.jpqlquery.SelectFromWhere;
@@ -324,6 +325,33 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
             || sig.equals(MethodChecker.streamCount);
    }
    
+   private ColumnExpressions<?> containsMethod(MethodSignature sig, MethodCallValue val, TypedValue itemVal, TypedValue listVal) throws TypedValueVisitorException
+   {
+      SymbExPassDown passdown = SymbExPassDown.with(val, false);
+      ColumnExpressions<?> item = itemVal.visit(this, passdown);
+
+      // Handle the collection part of isInList as a subquery
+      SymbExToSubQuery translator = config.newSymbExToSubQuery(argHandler, false);
+      JPQLQuery<?> subQuery = listVal.visit(translator, passdown);
+
+      if (subQuery.isValidSubquery() && subQuery instanceof SelectFromWhere) 
+      {
+         SelectFromWhere<?> sfw = (SelectFromWhere<?>)subQuery;
+         return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
+                  new BinaryExpression("IN", item.getOnlyColumn(), SubqueryExpression.from(sfw))); 
+      }
+      else if (subQuery.isValidSubquery() && subQuery instanceof ParameterAsQuery)
+      {
+         ParameterAsQuery<?> paramQuery = (ParameterAsQuery<?>)subQuery;
+         return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
+                new BinaryExpression("IN", item.getOnlyColumn(), paramQuery.cols.getOnlyColumn())); 
+      }
+      else
+      {
+	 throw new TypedValueVisitorException("Do not know how to translate the method " + sig + " into a JPQL function");
+      }
+   }
+   
    @Override public ColumnExpressions<?> virtualMethodCallValue(MethodCallValue.VirtualMethodCallValue val, SymbExPassDown in) throws TypedValueVisitorException
    {
       MethodSignature sig = val.getSignature();
@@ -548,15 +576,11 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
                               base.getOnlyColumn())
                         , new ConstantExpression("1")));
          }
-         else if (sig.equals(MethodChecker.collectionContains)
-               ||sig.equals(MethodChecker.setContains)
-               ||sig.equals(MethodChecker.listContains))
+         else if (sig.equals(MethodChecker.collectionContains) || sig.equals(MethodChecker.setContains) || sig.equals(MethodChecker.listContains))
          {
-             SymbExPassDown passdown = SymbExPassDown.with(val, in.isExpectingConditional);
-             ColumnExpressions<?> base = val.args.get(0).visit(this, passdown);
-             ColumnExpressions<?> collection = val.base.visit(this, passdown);
-             return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
-                   new BinaryExpression("IN", base.getOnlyColumn(), collection.getOnlyColumn())); 
+             TypedValue listVal = val.base;
+             TypedValue itemVal = val.args.get(0);
+             return containsMethod(sig, val, itemVal, listVal);
          }
          throw new TypedValueVisitorException("Do not know how to translate the method " + sig + " into a JPQL function");
       }
@@ -634,13 +658,12 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
             return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
                   new BinaryExpression("LIKE", base.getOnlyColumn(), pattern.getOnlyColumn())); 
          }
-         else if (sig.equals(MethodChecker.jpqlIn))
+         else if (sig.equals(MethodChecker.jpqlIsInList)
+               || sig.equals(MethodChecker.jpqlListContains))
          {
-             SymbExPassDown passdown = SymbExPassDown.with(val, in.isExpectingConditional);
-             ColumnExpressions<?> base = val.args.get(0).visit(this, passdown);
-             ColumnExpressions<?> pattern = val.args.get(1).visit(this, passdown);
-             return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
-                   new BinaryExpression("IN", base.getOnlyColumn(), pattern.getOnlyColumn())); 
+            TypedValue listVal = (sig.equals(MethodChecker.jpqlIsInList) ? val.args.get(1) : val.args.get(0));
+            TypedValue itemVal = (sig.equals(MethodChecker.jpqlIsInList) ? val.args.get(0) : val.args.get(1));
+            return containsMethod(sig, val, itemVal, listVal);
          }
          else if (sig.equals(MethodChecker.mathAbsDouble)
                || sig.equals(MethodChecker.mathAbsInt)

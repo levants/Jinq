@@ -442,9 +442,9 @@ public class JinqJPATypesTest extends JinqJPATestBase
    }
    
    @Test
-   public void testInCollection()
+   public void testContains()
    {
-      ArrayList<String> names = new ArrayList<>();
+      List<String> names = new ArrayList<>();
       names.add("Alice");
       names.add("John");
       List<Customer> customers = streams.streamAll(em, Customer.class)
@@ -469,7 +469,7 @@ public class JinqJPATypesTest extends JinqJPATestBase
    }
 
    @Test(expected=javax.persistence.PersistenceException.class)
-   public void testInCollectionSubQuery()
+   public void testContainsSubQuery()
    {
       // EclipseLink can't seem to handle IN where the elements are entities,
       // but Hibernate is actually ok with it.

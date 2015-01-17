@@ -576,7 +576,10 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
                               base.getOnlyColumn())
                         , new ConstantExpression("1")));
          }
-         else if (sig.equals(MethodChecker.collectionContains) || sig.equals(MethodChecker.setContains) || sig.equals(MethodChecker.listContains))
+         else if (sig.equals(MethodChecker.collectionContains) 
+        	    || sig.equals(MethodChecker.setContains) 
+        	    || sig.equals(MethodChecker.listContains)
+        	    || sig.equals(MethodChecker.queueContains))
          {
              TypedValue listVal = val.base;
              TypedValue itemVal = val.args.get(0);

@@ -494,7 +494,7 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
       else if (sig.equals(MethodChecker.streamExists))
       {
 	  TypedValue listVal = val.base;
-          return handleExists(val, listVal, false);
+          return handleExists(val, listVal);
       }
       else if (MethodChecker.jpqlFunctionMethods.contains(sig))
       {
@@ -728,7 +728,7 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
    }
    
    private ColumnExpressions<?> handleExists(TypedValue parent,
-	         TypedValue listVal, boolean isExpectingStream)
+	         TypedValue listVal)
 	         throws TypedValueVisitorException
    {
       SymbExPassDown passdown = SymbExPassDown.with(parent, false);
@@ -741,7 +741,7 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
       {
 	 SelectFromWhere<?> sfw = (SelectFromWhere<?>)subQuery;
 	 return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
-	       FunctionExpression.singleParam("EXISTS", SubqueryExpression.from(sfw))); 
+		 UnaryExpression.prefix("EXISTS", SubqueryExpression.from(sfw))); 
       }
       throw new TypedValueVisitorException("Trying to create a query using EXISTS but with an unhandled subquery type");
    }

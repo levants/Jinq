@@ -172,6 +172,8 @@ public interface JinqStream<T> extends Stream<T>
     */
    public <U> JinqStream<U> selectAllList(JoinToIterable<T, U> select);
    
+   public boolean exists();
+   
    // TODO: Joins are somewhat dangerous because certain types of joins that are
    // expressible here are NOT expressible in SQL. (Moving a join into
    // a from clause is only possible if the join does not access variables from

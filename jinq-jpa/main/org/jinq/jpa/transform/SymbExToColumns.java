@@ -491,6 +491,11 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
 
          throw new TypedValueVisitorException("Cannot apply getOnlyValue() to the given subquery");
       }
+      else if (sig.equals(MethodChecker.streamExists))
+      {
+	  TypedValue listVal = val.base;
+          return handleExists(val, listVal, false);
+      }
       else if (MethodChecker.jpqlFunctionMethods.contains(sig))
       {
          if (sig.equals(MethodChecker.bigDecimalAbs)
@@ -720,6 +725,25 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
                new BinaryExpression("IN", item.getOnlyColumn(), paramQuery.cols.getOnlyColumn())); 
       }
       throw new TypedValueVisitorException("Trying to create a query using IN but with an unhandled subquery type");
+   }
+   
+   private ColumnExpressions<?> handleExists(TypedValue parent,
+	         TypedValue listVal, boolean isExpectingStream)
+	         throws TypedValueVisitorException
+   {
+      SymbExPassDown passdown = SymbExPassDown.with(parent, false);
+
+      // Handle the collection part of isInList as a subquery
+      SymbExToSubQuery translator = config.newSymbExToSubQuery(argHandler, true);
+      JPQLQuery<?> subQuery = listVal.visit(translator, passdown);
+
+      if (subQuery.isValidSubquery() && subQuery instanceof SelectFromWhere) 
+      {
+	 SelectFromWhere<?> sfw = (SelectFromWhere<?>)subQuery;
+	 return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
+	       FunctionExpression.singleParam("EXISTS", SubqueryExpression.from(sfw))); 
+      }
+      throw new TypedValueVisitorException("Trying to create a query using EXISTS but with an unhandled subquery type");
    }
 
    // Tracks which numeric types are considered to have more information than

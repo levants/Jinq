@@ -121,6 +121,12 @@ class JPAJinqStreamWrapper<T> extends LazyWrappedStream<T> implements JPAJinqStr
    {
       return wrapped.aggregate(aggregate1, aggregate2, aggregate3, aggregate4, aggregate5);
    }
+   
+   @Override
+   public boolean exists()
+   {
+       return true;
+   }
 
    @Override
    public long count()

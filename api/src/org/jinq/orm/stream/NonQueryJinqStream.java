@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 
+
 import org.jinq.tuples.Pair;
 import org.jinq.tuples.Tuple;
 import org.jinq.tuples.Tuple3;
@@ -110,6 +111,12 @@ public class NonQueryJinqStream<T> extends LazyWrappedStream<T> implements JinqS
    public <U> JinqStream<U> selectAllList(JoinToIterable<T, U> select)
    {
       return wrap(flatMap( val -> StreamSupport.stream(select.join(val).spliterator(), false) ));
+   }
+   
+   @Override
+   public boolean exists()
+   {
+       return true;
    }
 
    @Override

@@ -108,6 +108,7 @@ class MethodChecker implements PathAnalysisMethodChecker
    public final static MethodSignature streamJoin = new MethodSignature("org/jinq/orm/stream/JinqStream", "join", "(Lorg/jinq/orm/stream/JinqStream$Join;)Lorg/jinq/orm/stream/JinqStream;");
    public final static MethodSignature streamJoinList;
    public final static MethodSignature streamGetOnlyValue = new MethodSignature("org/jinq/orm/stream/JinqStream", "getOnlyValue", "()Ljava/lang/Object;");
+   public final static MethodSignature streamExists = new MethodSignature("org/jinq/orm/stream/JinqStream", "exists", "()Z");
    
    private static final Set<MethodSignature> subqueryMethods = 
          new HashSet<>();
@@ -129,6 +130,7 @@ class MethodChecker implements PathAnalysisMethodChecker
       subqueryMethods.add(streamJoin);
       subqueryMethods.add(streamJoinList);
       subqueryMethods.add(streamGetOnlyValue);
+      subqueryMethods.add(streamExists);
    }
    
    MethodChecker(Set<Class<?>> safeMethodAnnotations,

@@ -1,6 +1,8 @@
 package org.jinq.jpa.transform;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,8 +24,10 @@ import org.jinq.jpa.jpqlquery.TupleRowReader;
 import org.jinq.jpa.jpqlquery.UnaryExpression;
 import org.objectweb.asm.Type;
 
+import ch.epfl.labos.iu.orm.queryll2.path.Annotations;
 import ch.epfl.labos.iu.orm.queryll2.path.TransformationClassAnalyzer;
 import ch.epfl.labos.iu.orm.queryll2.symbolic.ConstantValue;
+import ch.epfl.labos.iu.orm.queryll2.symbolic.BasicSymbolicInterpreter.OperationSideEffect;
 import ch.epfl.labos.iu.orm.queryll2.symbolic.ConstantValue.NullConstant;
 import ch.epfl.labos.iu.orm.queryll2.symbolic.LambdaFactory;
 import ch.epfl.labos.iu.orm.queryll2.symbolic.MethodCallValue;
@@ -325,33 +329,6 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
             || sig.equals(MethodChecker.streamCount);
    }
    
-   private ColumnExpressions<?> containsMethod(MethodSignature sig, MethodCallValue val, TypedValue itemVal, TypedValue listVal) throws TypedValueVisitorException
-   {
-      SymbExPassDown passdown = SymbExPassDown.with(val, false);
-      ColumnExpressions<?> item = itemVal.visit(this, passdown);
-
-      // Handle the collection part of isInList as a subquery
-      SymbExToSubQuery translator = config.newSymbExToSubQuery(argHandler, false);
-      JPQLQuery<?> subQuery = listVal.visit(translator, passdown);
-
-      if (subQuery.isValidSubquery() && subQuery instanceof SelectFromWhere) 
-      {
-         SelectFromWhere<?> sfw = (SelectFromWhere<?>)subQuery;
-         return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
-                  new BinaryExpression("IN", item.getOnlyColumn(), SubqueryExpression.from(sfw))); 
-      }
-      else if (subQuery.isValidSubquery() && subQuery instanceof ParameterAsQuery)
-      {
-         ParameterAsQuery<?> paramQuery = (ParameterAsQuery<?>)subQuery;
-         return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
-                new BinaryExpression("IN", item.getOnlyColumn(), paramQuery.cols.getOnlyColumn())); 
-      }
-      else
-      {
-	 throw new TypedValueVisitorException("Do not know how to translate the method " + sig + " into a JPQL function");
-      }
-   }
-   
    @Override public ColumnExpressions<?> virtualMethodCallValue(MethodCallValue.VirtualMethodCallValue val, SymbExPassDown in) throws TypedValueVisitorException
    {
       MethodSignature sig = val.getSignature();
@@ -438,7 +415,7 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
                throw new TypedValueVisitorException("Expecting a lambda factory for aggregate method");
             LambdaFactory lambdaFactory = (LambdaFactory)val.args.get(0);
             try {
-               lambda = LambdaAnalysis.analyzeMethod(config.metamodel, config.alternateClassLoader, config.isObjectEqualsSafe, lambdaFactory.getLambdaMethod(), lambdaFactory.getCapturedArgs(), true);
+               lambda = LambdaAnalysis.analyzeMethod(config.metamodel, config.alternateClassLoader, config.isObjectEqualsSafe, config.isCollectionContainsSafe, lambdaFactory.getLambdaMethod(), lambdaFactory.getCapturedArgs(), true);
             } catch (Exception e)
             {
                throw new TypedValueVisitorException("Could not analyze the lambda code", e);
@@ -576,12 +553,6 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
                               base.getOnlyColumn())
                         , new ConstantExpression("1")));
          }
-         else if (sig.equals(MethodChecker.collectionContains) || sig.equals(MethodChecker.setContains) || sig.equals(MethodChecker.listContains))
-         {
-             TypedValue listVal = val.base;
-             TypedValue itemVal = val.args.get(0);
-             return containsMethod(sig, val, itemVal, listVal);
-         }
          throw new TypedValueVisitorException("Do not know how to translate the method " + sig + " into a JPQL function");
       }
       else if (sig.equals(TransformationClassAnalyzer.stringBuilderToString))
@@ -620,7 +591,25 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
          return ColumnExpressions.singleColumn(new SimpleRowReader<>(), head);
       }
       else
+      {
+         try {
+            Method reflectedMethod = Annotations
+                  .asmMethodSignatureToReflectionMethod(sig);
+            // Special handling of Collection.contains() for subclasses of Collection.
+            if ("contains".equals(sig.name) 
+                  && "(Ljava/lang/Object;)Z".equals(sig.desc)
+                  && Collection.class.isAssignableFrom(reflectedMethod.getDeclaringClass()))
+            {
+               TypedValue listVal = val.base;
+               TypedValue itemVal = val.args.get(0);
+               return handleIsIn(val, listVal, itemVal, false);
+            }
+         } catch (ClassNotFoundException | NoSuchMethodException e)
+         {
+            // Eat the error
+         }
          return super.virtualMethodCallValue(val, in);
+      }
    }
 
    @Override public ColumnExpressions<?> staticMethodCallValue(MethodCallValue.StaticMethodCallValue val, SymbExPassDown in) throws TypedValueVisitorException 
@@ -658,12 +647,16 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
             return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
                   new BinaryExpression("LIKE", base.getOnlyColumn(), pattern.getOnlyColumn())); 
          }
-         else if (sig.equals(MethodChecker.jpqlIsInList)
+         else if (sig.equals(MethodChecker.jpqlIsIn) 
+               || sig.equals(MethodChecker.jpqlIsInList)
                || sig.equals(MethodChecker.jpqlListContains))
          {
-            TypedValue listVal = (sig.equals(MethodChecker.jpqlIsInList) ? val.args.get(1) : val.args.get(0));
-            TypedValue itemVal = (sig.equals(MethodChecker.jpqlIsInList) ? val.args.get(0) : val.args.get(1));
-            return containsMethod(sig, val, itemVal, listVal);
+            boolean isItemFirst = (sig.equals(MethodChecker.jpqlIsIn) 
+               || sig.equals(MethodChecker.jpqlIsInList));
+            boolean isExpectingStream = (sig.equals(MethodChecker.jpqlIsIn));
+            TypedValue listVal = (isItemFirst ? val.args.get(1) : val.args.get(0));
+            TypedValue itemVal = (isItemFirst ? val.args.get(0) : val.args.get(1));
+            return handleIsIn(val, listVal, itemVal, isExpectingStream);
          }
          else if (sig.equals(MethodChecker.mathAbsDouble)
                || sig.equals(MethodChecker.mathAbsInt)
@@ -688,6 +681,45 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
       }
       else
          return super.staticMethodCallValue(val, in);
+   }
+
+   private ColumnExpressions<?> handleIsIn(TypedValue parent,
+         TypedValue listVal, TypedValue itemVal, boolean isExpectingStream)
+         throws TypedValueVisitorException
+   {
+      SymbExPassDown passdown = SymbExPassDown.with(parent, false);
+      ColumnExpressions<?> item = itemVal.visit(this, passdown);
+
+      // Handle the collection part of isInList as a subquery
+      SymbExToSubQuery translator = config.newSymbExToSubQuery(argHandler, isExpectingStream);
+      JPQLQuery<?> subQuery = listVal.visit(translator, passdown);
+
+      if (subQuery.isValidSubquery() && subQuery instanceof SelectFromWhere) 
+      {
+         SelectFromWhere<?> sfw = (SelectFromWhere<?>)subQuery;
+         // Check if the subquery is a simple navigational link
+         // (These sorts of subqueries don't really work well at all in JPA, so 
+         // there's no point in over-optimizing it--in fact, the full subquery
+         // works fine in Hibernate, but the optimized version does not)
+//               if (sfw.isSelectFromWhere() && sfw.where == null 
+//                     && sfw.froms.size() == 1 && sfw.froms.get(0) instanceof From.FromNavigationalLinks
+//                     && sfw.cols.getNumColumns() == 1 && sfw.cols.getOnlyColumn() instanceof FromAliasExpression)
+//               {
+//                  return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
+//                        new BinaryExpression("IN", item.getOnlyColumn(),
+//                              ((From.FromNavigationalLinks)sfw.froms.get(0)).links)); 
+//               }
+//               else
+            return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
+                  new BinaryExpression("IN", item.getOnlyColumn(), SubqueryExpression.from(sfw))); 
+      }
+      else if (subQuery.isValidSubquery() && subQuery instanceof ParameterAsQuery)
+      {
+         ParameterAsQuery<?> paramQuery = (ParameterAsQuery<?>)subQuery;
+         return ColumnExpressions.singleColumn(new SimpleRowReader<>(),
+               new BinaryExpression("IN", item.getOnlyColumn(), paramQuery.cols.getOnlyColumn())); 
+      }
+      throw new TypedValueVisitorException("Trying to create a query using IN but with an unhandled subquery type");
    }
 
    // Tracks which numeric types are considered to have more information than

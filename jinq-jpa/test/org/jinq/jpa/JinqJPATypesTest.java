@@ -12,6 +12,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -440,11 +441,15 @@ public class JinqJPATypesTest extends JinqJPATestBase
       assertEquals(1, customers.size());
       assertEquals("Alice", customers.get(0).getName());
    }
-   
+
    @Test
-   public void testInCollection()
+   public void testCollectionContains()
    {
-      ArrayList<String> names = new ArrayList<>();
+      // Technically, we can't be sure whether calls to Collection.contains()
+      // has weird side-effects that we can't emulate using a database query,
+      // but people really want to be able to write code like this, and it's
+      // normally safe, so we'll let it go through.
+      HashSet<String> names = new HashSet<>();
       names.add("Alice");
       names.add("John");
       List<Customer> customers = streams.streamAll(em, Customer.class)
@@ -454,7 +459,7 @@ public class JinqJPATypesTest extends JinqJPATestBase
       assertEquals(1, customers.size());
       assertEquals("Alice", customers.get(0).getName());
    }
-   
+
    @Test(expected=javax.persistence.PersistenceException.class)
    public void testCollectionSubQuery()
    {
@@ -468,16 +473,4 @@ public class JinqJPATypesTest extends JinqJPATestBase
       assertEquals(2, suppliers.size());
    }
 
-   @Test(expected=javax.persistence.PersistenceException.class)
-   public void testInCollectionSubQuery()
-   {
-      // EclipseLink can't seem to handle IN where the elements are entities,
-      // but Hibernate is actually ok with it.
-      Item widgets = streams.streamAll(em, Item.class).where(i -> i.getName().equals("Widgets")).getOnlyValue();
-      List<Supplier> suppliers = streams.streamAll(em, Supplier.class)
-            .where(s -> s.getItems().contains(widgets))
-            .toList();
-      assertEquals("SELECT A FROM Supplier A WHERE :param0 IN (SELECT B FROM A.items B)", query);
-      assertEquals(2, suppliers.size());
-   }
 }

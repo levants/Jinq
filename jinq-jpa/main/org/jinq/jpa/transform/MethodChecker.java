@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.jinq.jpa.JPQL;
+import org.jinq.orm.stream.JinqStream;
 
 import ch.epfl.labos.iu.orm.queryll2.path.Annotations;
 import ch.epfl.labos.iu.orm.queryll2.path.PathAnalysisMethodChecker;
@@ -21,10 +22,12 @@ class MethodChecker implements PathAnalysisMethodChecker
    private final Set<MethodSignature> safeMethods;
    private final Set<MethodSignature> safeStaticMethods;
    private final boolean isObjectEqualsSafe;
+   private final boolean isCollectionContainsSafe;
 
    public final static MethodSignature objectEquals = new MethodSignature("java/lang/Object", "equals", "(Ljava/lang/Object;)Z");
 
    public final static MethodSignature jpqlLike;
+   public final static MethodSignature jpqlIsIn;
    public final static MethodSignature jpqlIsInList;
    public final static MethodSignature jpqlListContains;
    public final static MethodSignature mathSqrt = new MethodSignature("java/lang/Math", "sqrt", "(D)D");
@@ -40,18 +43,19 @@ class MethodChecker implements PathAnalysisMethodChecker
    public final static MethodSignature stringLength = new MethodSignature("java/lang/String", "length", "()I");
    public final static MethodSignature stringSubstring = new MethodSignature("java/lang/String", "substring", "(II)Ljava/lang/String;");
    public final static MethodSignature stringIndexOf = new MethodSignature("java/lang/String", "indexOf", "(Ljava/lang/String;)I");
-   public final static MethodSignature collectionContains = new MethodSignature("java/util/Collection", "contains", "(Ljava/lang/Object;)Z");
-   public final static MethodSignature setContains = new MethodSignature("java/util/Set", "contains", "(Ljava/lang/Object;)Z");
-   public final static MethodSignature listContains = new MethodSignature("java/util/List", "contains", "(Ljava/lang/Object;)Z");
-   public final static MethodSignature queueContains = new MethodSignature("java/util/Queue", "contains", "(Ljava/lang/Object;)Z");
    
    static {
       try {
          // I'm initializing some of these method signatures through reflection 
          // instead of statically so that it's easier to find breakages due to method renaming etc.
          jpqlLike = MethodSignature.fromMethod(JPQL.class.getMethod("like", String.class, String.class));
+         jpqlIsIn = MethodSignature.fromMethod(JPQL.class.getMethod("isIn", Object.class, JinqStream.class));
          jpqlIsInList = MethodSignature.fromMethod(JPQL.class.getMethod("isInList", Object.class, Collection.class));
          jpqlListContains = MethodSignature.fromMethod(JPQL.class.getMethod("listContains", Collection.class, Object.class));
+
+         streamSelectAll = MethodSignature.fromMethod(JinqStream.class.getMethod("selectAll", JinqStream.Join.class));
+         streamSelectAllList = MethodSignature.fromMethod(JinqStream.class.getMethod("selectAllList", JinqStream.JoinToIterable.class));
+         streamJoinList = MethodSignature.fromMethod(JinqStream.class.getMethod("joinList", JinqStream.JoinToIterable.class));
       } catch (NoSuchMethodException | SecurityException e)
       {
          throw new IllegalArgumentException("Cannot initialize MethodChecker because it cannot find a needed method", e);
@@ -63,6 +67,7 @@ class MethodChecker implements PathAnalysisMethodChecker
    final static Set<MethodSignature> jpqlFunctionStaticMethods = new HashSet<>();
    static {
       jpqlFunctionStaticMethods.add(jpqlLike);
+      jpqlFunctionStaticMethods.add(jpqlIsIn);
       jpqlFunctionStaticMethods.add(jpqlIsInList);
       jpqlFunctionStaticMethods.add(jpqlListContains);
       jpqlFunctionStaticMethods.add(mathSqrt);
@@ -78,10 +83,6 @@ class MethodChecker implements PathAnalysisMethodChecker
       jpqlFunctionMethods.add(stringLength);
       jpqlFunctionMethods.add(stringSubstring);
       jpqlFunctionMethods.add(stringIndexOf);
-      jpqlFunctionMethods.add(collectionContains);
-      jpqlFunctionMethods.add(setContains);
-      jpqlFunctionMethods.add(listContains);
-      jpqlFunctionMethods.add(queueContains);
    }
    
    public final static MethodSignature streamSumInt = TransformationClassAnalyzer.streamSumInt;
@@ -95,9 +96,13 @@ class MethodChecker implements PathAnalysisMethodChecker
    public final static MethodSignature streamCount = new MethodSignature("org/jinq/orm/stream/JinqStream", "count", "()J");
    public final static MethodSignature streamDistinct = new MethodSignature("org/jinq/orm/stream/JinqStream", "distinct", "()Lorg/jinq/orm/stream/JinqStream;");
    public final static MethodSignature streamSelect = new MethodSignature("org/jinq/orm/stream/JinqStream", "select", "(Lorg/jinq/orm/stream/JinqStream$Select;)Lorg/jinq/orm/stream/JinqStream;");
+   public final static MethodSignature streamSelectAll;
+   public final static MethodSignature streamSelectAllList;
    public final static MethodSignature streamWhere = new MethodSignature("org/jinq/orm/stream/JinqStream", "where", "(Lorg/jinq/orm/stream/JinqStream$Where;)Lorg/jinq/orm/stream/JinqStream;");
    public final static MethodSignature streamJoin = new MethodSignature("org/jinq/orm/stream/JinqStream", "join", "(Lorg/jinq/orm/stream/JinqStream$Join;)Lorg/jinq/orm/stream/JinqStream;");
+   public final static MethodSignature streamJoinList;
    public final static MethodSignature streamGetOnlyValue = new MethodSignature("org/jinq/orm/stream/JinqStream", "getOnlyValue", "()Ljava/lang/Object;");
+   public final static MethodSignature streamExists = new MethodSignature("org/jinq/orm/stream/JinqStream", "exists", "()Z");
    
    private static final Set<MethodSignature> subqueryMethods = 
          new HashSet<>();
@@ -113,20 +118,26 @@ class MethodChecker implements PathAnalysisMethodChecker
       subqueryMethods.add(streamCount);
       subqueryMethods.add(streamDistinct);
       subqueryMethods.add(streamSelect);
+      subqueryMethods.add(streamSelectAll);
+      subqueryMethods.add(streamSelectAllList);
       subqueryMethods.add(streamWhere);
       subqueryMethods.add(streamJoin);
+      subqueryMethods.add(streamJoinList);
       subqueryMethods.add(streamGetOnlyValue);
+      subqueryMethods.add(streamExists);
    }
    
    MethodChecker(Set<Class<?>> safeMethodAnnotations,
          Set<MethodSignature> safeMethods,
          Set<MethodSignature> safeStaticMethods, 
-         boolean isObjectEqualsSafe)
+         boolean isObjectEqualsSafe,
+         boolean isCollectionContainsSafe)
    {
       this.safeMethodAnnotations = safeMethodAnnotations;
       this.safeMethods = safeMethods;
       this.safeStaticMethods = safeStaticMethods;
       this.isObjectEqualsSafe = isObjectEqualsSafe;
+      this.isCollectionContainsSafe = isCollectionContainsSafe;
    }
 
    /* (non-Javadoc)
@@ -149,11 +160,13 @@ class MethodChecker implements PathAnalysisMethodChecker
       if (isObjectEqualsSafe && objectEquals.equals(m))
       {
          return OperationSideEffect.NONE;
-      } else if (safeMethods.contains(m) || subqueryMethods.contains(m)
+      }
+      else if (safeMethods.contains(m) || subqueryMethods.contains(m)
             || jpqlFunctionMethods.contains(m))
       {
          return OperationSideEffect.NONE;
-      } else
+      }
+      else
       {
          // Use reflection to get info about the method (or would it be better
          // to do this through direct bytecode inspection?), and see if it's
@@ -162,6 +175,12 @@ class MethodChecker implements PathAnalysisMethodChecker
          {
             Method reflectedMethod = Annotations
                   .asmMethodSignatureToReflectionMethod(m);
+            // Special handling of Collection.contains() for subclasses of Collection.
+            if (isCollectionContainsSafe 
+                  && "contains".equals(m.name) 
+                  && "(Ljava/lang/Object;)Z".equals(m.desc)
+                  && Collection.class.isAssignableFrom(reflectedMethod.getDeclaringClass()))
+               return OperationSideEffect.NONE; 
             if (Annotations.methodHasSomeAnnotations(reflectedMethod,
                   safeMethodAnnotations))
                return OperationSideEffect.NONE;

@@ -192,6 +192,21 @@ class MethodChecker implements PathAnalysisMethodChecker
 
       }
    }
+   
+   public static boolean isContainsMethod(MethodSignature m)
+   {
+      try
+      {
+	 Class<?> clazz = Annotations.asmTypeToClass(m.getOwnerType());
+	 return "contains".equals(m.name) 
+	        && "(Ljava/lang/Object;)Z".equals(m.desc)
+	        && Collection.class.isAssignableFrom(clazz);
+      }catch (ClassNotFoundException e)
+      {
+	    // Eat the error
+      }
+      return false;
+   }
 
    @Override
    public boolean isFluentChaining(MethodSignature sig)

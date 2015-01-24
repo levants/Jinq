@@ -597,22 +597,14 @@ public class SymbExToColumns extends TypedValueVisitor<SymbExPassDown, ColumnExp
       }
       else
       {
-         try {
-            Method reflectedMethod = Annotations
-                  .asmMethodSignatureToReflectionMethod(sig);
-            // Special handling of Collection.contains() for subclasses of Collection.
-            if ("contains".equals(sig.name) 
-                  && "(Ljava/lang/Object;)Z".equals(sig.desc)
-                  && Collection.class.isAssignableFrom(reflectedMethod.getDeclaringClass()))
-            {
-               TypedValue listVal = val.base;
-               TypedValue itemVal = val.args.get(0);
-               return handleIsIn(val, listVal, itemVal, false);
-            }
-         } catch (ClassNotFoundException | NoSuchMethodException e)
+         // Special handling of Collection.contains() for subclasses of Collection.
+         if (MethodChecker.isContainsMethod(sig))
          {
-            // Eat the error
+            TypedValue listVal = val.base;
+            TypedValue itemVal = val.args.get(0);
+            return handleIsIn(val, listVal, itemVal, false);
          }
+ 
          return super.virtualMethodCallValue(val, in);
       }
    }

@@ -197,6 +197,7 @@ class MethodChecker implements PathAnalysisMethodChecker
    {
       try
       {
+	  //I think there is no need of call Annotations.asmMethodSignatureToReflectionMethod
 	 Class<?> clazz = Annotations.asmTypeToClass(m.getOwnerType());
 	 return "contains".equals(m.name) 
 	        && "(Ljava/lang/Object;)Z".equals(m.desc)
